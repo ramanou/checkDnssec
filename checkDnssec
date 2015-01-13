@@ -1,0 +1,149 @@
+#!/usr/bin/python3.2
+# -*- coding: iso-8859-1 -*-
+# OUTIL DE SIGNATURE DE ZONE DNSSEC et INTEGRATION du PROTOCOLE DANE DANS LES ZONES DNS
+
+#Les Imports
+import os
+
+#Variables
+statusZone = "KO"
+global ZoneDns
+global politique
+ZoneDns = "exemple.tiir"
+politique = "test"
+
+#Verification de la ZONE
+
+def verification_zone(ZoneDns) :
+	global statusZone
+	resultat = os.system("dig @localhost " + ZoneDns + " >TestDNS")
+	print "dig @localhost " + ZoneDns + " >TestDNS"
+	chaine = "status: SERVFAIL" # Texte à rechercher
+
+	fichier = open("TestDNS","r")
+	for ligne in fichier:
+		while chaine not in ligne:
+			break
+		else :
+			statusZone="OK"
+	fichier.close()
+
+	if statusZone == "OK" :
+		print "\n**********************************************"
+	  	print ("* Votre Zone " + ZoneDns + " Fonctionne bien ")
+	  	print "**********************************************\n"
+	else :
+	  	print ("Votre Zone " + ZoneDns + " Est actuellement KO")
+#verification_zone(ZoneDns)
+
+#Creation de Politique.
+
+def creationPolitique ():
+
+	print ("Vous allez créer une politique qui pourra etre applique pour la signature DNSSEC")
+	
+	nomPolitique = raw_input(" Nom de la Politique:  ")
+	algo = raw_input(" Entrez l'algoritme à utiliser pour cette politique :  ")
+	tailleKSK = raw_input(" Taille de la clé KSK  : ")
+	tailleZSK = raw_input(" Taille de la clé ZSK  : ")
+
+	fichier = open(nomPolitique, "w")  
+	fichier.write(" Fichier de la politique " + nomPolitique + " \n")
+	fichier.write("************************************* \n")
+	fichier.write(nomPolitique +"\n")  
+	fichier.write(algo +"\n")
+	fichier.write(tailleKSK +"\n")
+	fichier.write(tailleZSK +"\n")
+	fichier.write("*************************************")
+	fichier.close() 
+#creationPolitique()
+
+#Generation des Clé de signature en utilisant la politique.
+
+def genKskZsk (politique, ZoneDns):
+	#global politique
+	politiqueFile = open(politique, 'r')
+	Lignes=[]
+	Lignes=politiqueFile.readlines()
+	politiqueFile.close()
+
+	algo=Lignes[3].strip() 
+	tailleKSK=Lignes[4].strip()
+	tailleZSK=Lignes[5].strip()
+	
+	#Generation des Clés KSK
+	os.system("gnome-terminal -e '/etc/init.d/rng-tools start' & dnssec-keygen -f KSK -a " + algo + " -b " + tailleKSK + " -n ZONE " + ZoneDns)
+
+	#Generation des Clés ZSK
+	os.system("gnome-terminal -e '/etc/init.d/rng-tools start' & dnssec-keygen -a " + algo + " -b " + tailleZSK + " -n ZONE " + ZoneDns)
+	
+	#Verification de la creation des fichiers
+
+	CleKSK=os.path.isfile("K" + ZoneDns + ".+005+34123.key")
+	CleZSK=os.path.isfile("K" + ZoneDns + ".+005+42627.key") 
+	print ("K" + ZoneDns + ".+008+34036.key")
+	
+	if CleKSK == True:
+		print "Création de la CLE KSK OK"
+		if CleZSK == True:
+			print "Creation de la CLE ZSK OK"
+		else: 
+			print "La Clé ZSK n existe pas"
+	else:
+		print "La Clé KSK n existe pas"
+genKskZsk (politique, ZoneDns)
+
+#signature des enregistrements de ZONE en DNSSEC
+
+def signature(ZoneDns):
+		
+		#Identification des Clés
+		CleKSK = "/export/home/ramanou/Documents/securite_reseau/dnssec/K" + ZoneDns + ".+005+34123.key"
+		CleZSK = "/export/home/ramanou/Documents/securite_reseau/dnssec/K" + ZoneDns + ".+005+42627.key"
+
+		#Insertion des clés dans la zone
+		fichierZone = open("/etc/bind/" + ZoneDns, 'a')
+		fichierZone.write("\n")
+		fichierZone.write("$INCLUDE " + CleZSK + "\n")
+		fichierZone.write("$INCLUDE " + CleKSK + "\n")
+		fichierZone.close()
+
+		# Signature des enregistrements
+		signResultat = os.system("dnssec-signzone -o " + ZoneDns + " -k " + CleKSK + " /etc/bind/" + ZoneDns + " " + CleZSK )
+
+		#Vérification de la signature
+		Verification=os.path.isfile("/etc/bind/" + ZoneDns + ".signed") 
+
+		if Verification == True :
+			print "\n**********************************************"
+	  		print ("* Les enregistrement de votre Zone " + ZoneDns + " sont bien signés en DNSSEC ")
+	  		print "**********************************************\n"
+	  	else :
+	  		print "\n**********************************************"
+	  		print ("* Echec de signature en DNSSEC pour " + ZoneDns )
+	  		print "**********************************************\n"
+#signature(ZoneDns)
+
+def delegation(ZoneDns):
+
+	#Récupérationd des Informations DS pour la zone Parente
+
+	delegation = os.system("dnssec-dsfromkey  -f  " + ZoneDns)
+	print delegation
+
+#delegation(ZoneDns)
+
+def signVerification(ZoneDns):
+
+	valeur = raw_input(" Faite 1 pour afficher les enregistrement RRSIG, Et 2 pour les DNSKEY : ")
+
+	if valeur == '1' :
+		rrsig = os.system("dig A " + ZoneDns + " @localhost +noadditional +dnssec +multiline")
+
+
+	elif valeur == '2' : 
+		dnskey = os.system("dig DNSKEY " + ZoneDns + " @localhost +multiline")
+		
+	else :
+		print "Votre Saisie est incorrect"
+#signVerification(ZoneDns)
